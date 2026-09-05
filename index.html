@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token Economics Analyzer</title>
+<meta name="description" content="Estimate the monthly cost and benefit of an AI/LLM workflow before you build it.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          page: 'var(--color-page)',
+          surface: 'var(--color-surface)',
+          'ink-primary': 'var(--color-ink-primary)',
+          'ink-secondary': 'var(--color-ink-secondary)',
+          'ink-muted': 'var(--color-ink-muted)',
+          hairline: 'var(--color-hairline)',
+          'brand-blue': 'var(--color-brand-blue)',
+          'brand-violet': 'var(--color-brand-violet)',
+          'brand-green': 'var(--color-brand-green)',
+          'status-good': 'var(--color-status-good)',
+          'status-warning': 'var(--color-status-warning)',
+          'status-serious': 'var(--color-status-serious)',
+          'status-critical': 'var(--color-status-critical)',
+        }
+      }
+    }
+  };
+</script>
+</head>
+<body class="min-h-screen bg-page text-ink-primary antialiased">
+
+<header class="border-b border-hairline">
+  <div class="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-blue to-brand-violet flex items-center justify-center text-white font-bold text-lg">T</div>
+      <div>
+        <h1 class="text-lg font-semibold leading-tight">Token Economics Analyzer</h1>
+        <p class="text-xs text-ink-muted leading-tight">Cost & benefit modeling for AI workflows</p>
+      </div>
+    </div>
+    <button id="btn-settings" class="text-sm text-ink-secondary hover:text-ink-primary border border-hairline rounded-md px-3 py-1.5 transition-colors">
+      ⚙ Settings
+    </button>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10">
+
+  <!-- SCREEN: SETUP -->
+  <section id="screen-setup" class="screen">
+    <div class="max-w-xl mx-auto">
+      <h2 class="text-2xl font-semibold mb-2">Connect your Gemini API key</h2>
+      <p class="text-ink-secondary mb-6 text-sm">
+        This app calls Google's Gemini API directly from your browser. Your key is stored
+        only in this browser's local storage — it is never sent anywhere except Google's API,
+        and never leaves your device otherwise.
+      </p>
+
+      <div class="card p-6 space-y-5">
+        <div>
+          <label class="block text-sm font-medium mb-1.5" for="input-api-key">Gemini API key</label>
+          <input id="input-api-key" type="password" placeholder="AIza..."
+            class="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40" />
+          <p class="text-xs text-ink-muted mt-1.5">
+            Don't have one? <a class="text-brand-blue hover:underline" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get a free key at Google AI Studio →</a>
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5" for="select-engine">Reasoning model</label>
+          <select id="select-engine" class="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (recommended, free tier)</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro (higher quality, may need billing)</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+          </select>
+        </div>
+
+        <div id="key-status" class="text-sm hidden"></div>
+
+        <div class="flex gap-3">
+          <button id="btn-test-key" class="btn-secondary">Test key</button>
+          <button id="btn-save-key" class="btn-primary flex-1">Save & continue</button>
+        </div>
+      </div>
+
+      <p class="text-xs text-ink-muted mt-4 text-center">
+        <a href="#" id="link-mock-mode" class="hover:underline">Just exploring? Try demo mode with sample data →</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- SCREEN: DESCRIBE -->
+  <section id="screen-describe" class="screen hidden">
+    <div class="max-w-xl mx-auto">
+      <div class="step-indicator mb-6">Step 1 of 4 — Describe the workflow</div>
+      <h2 class="text-2xl font-semibold mb-2">What workflow do you want to evaluate?</h2>
+      <p class="text-ink-secondary mb-6 text-sm">
+        Describe it in plain language. The more detail, the better the follow-up questions.
+      </p>
+
+      <div class="card p-6 space-y-5">
+        <div>
+          <label class="block text-sm font-medium mb-1.5" for="input-workflow-name">Workflow name</label>
+          <input id="input-workflow-name" type="text" placeholder="e.g. Customer support ticket triage"
+            class="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5" for="input-workflow-desc">Description</label>
+          <textarea id="input-workflow-desc" rows="6" placeholder="e.g. An AI agent reads incoming support tickets, searches our knowledge base, drafts a reply, and loops up to 3 times to refine the answer before a human reviews it..."
+            class="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40"></textarea>
+        </div>
+        <div class="flex justify-between items-center">
+          <button id="btn-back-to-setup" class="text-sm text-ink-secondary hover:text-ink-primary">← Back</button>
+          <button id="btn-generate-questions" class="btn-primary">Generate questions →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN: LOADING (generic, reused for question-gen and processing) -->
+  <section id="screen-loading" class="screen hidden">
+    <div class="max-w-md mx-auto text-center py-20">
+      <div class="spinner mx-auto mb-6"></div>
+      <h2 id="loading-title" class="text-lg font-semibold mb-2">Working…</h2>
+      <p id="loading-subtitle" class="text-ink-secondary text-sm"></p>
+    </div>
+  </section>
+
+  <!-- SCREEN: QUESTIONNAIRE -->
+  <section id="screen-questionnaire" class="screen hidden">
+    <div class="max-w-xl mx-auto">
+      <div class="step-indicator mb-6">Step 2 of 4 — Workflow details</div>
+      <h2 class="text-2xl font-semibold mb-2">A few details about this workflow</h2>
+      <p class="text-ink-secondary mb-6 text-sm">
+        These answers drive the cost and benefit math — take a moment to get them right.
+      </p>
+      <form id="form-questionnaire" class="card p-6 space-y-5"></form>
+      <div class="flex justify-between items-center mt-5">
+        <button id="btn-back-to-describe" class="text-sm text-ink-secondary hover:text-ink-primary">← Back</button>
+        <button id="btn-submit-questionnaire" class="btn-primary">Analyze workflow →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN: RESULTS -->
+  <section id="screen-results" class="screen hidden">
+    <div id="results-content"></div>
+  </section>
+
+</main>
+
+<footer class="max-w-5xl mx-auto px-6 py-8 text-xs text-ink-muted border-t border-hairline mt-10">
+  Estimates are indicative — based on model pricing found via web search and AI-generated
+  assumptions about your workflow. Always validate against a real pilot before committing budget.
+</footer>
+
+<!-- Settings modal -->
+<div id="modal-settings" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-panel card p-6 max-w-md w-full">
+    <h3 class="text-lg font-semibold mb-4">Settings</h3>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium mb-1.5">Gemini API key</label>
+        <input id="modal-input-api-key" type="password" placeholder="AIza..."
+          class="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1.5">Reasoning model</label>
+        <select id="modal-select-engine" class="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40">
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+        </select>
+      </div>
+      <div class="flex gap-3 justify-between pt-2">
+        <button id="btn-clear-key" class="text-sm text-status-critical hover:underline">Clear saved key</button>
+        <div class="flex gap-3">
+          <button id="btn-close-settings" class="btn-secondary">Cancel</button>
+          <button id="btn-save-settings" class="btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
