@@ -4,8 +4,13 @@ import { renderQuestionnaire, collectAnswers } from './questionnaire.js';
 import { computeCosts, computeReturn } from './calc.js';
 import { renderResults } from './results.js';
 
+// Filled in after `wrangler deploy` — see worker/README.md. Not a secret: this is a
+// public endpoint address, safe to hardcode (the real Gemini key never leaves the Worker).
+const DEMO_PROXY_URL = 'https://tokeneconomics-demo.WORKERS_SUBDOMAIN.workers.dev';
+
 const params = new URLSearchParams(location.search);
 const MOCK = params.get('mock') === '1';
+const PROXY = !MOCK && params.get('demo') === '1';
 const api = MOCK ? mockApi : geminiApi;
 
 const LS_KEY = 'te_gemini_api_key';
@@ -43,7 +48,11 @@ function showLoading(title, subtitle) {
   showScreen('loading');
 }
 
+/** In demo/proxy mode, a demo_* error kind gets a message steering toward BYOK. */
 function friendlyError(e) {
+  if (PROXY && e instanceof geminiApi.GeminiError && e.kind && e.kind.startsWith('demo_')) {
+    return `${e.message}\n\nWant to keep going right now? Get your own free key at aistudio.google.com — it only takes a minute.`;
+  }
   return e && e.message ? e.message : 'Something went wrong. Please try again.';
 }
 
@@ -53,6 +62,27 @@ function showKeyStatus(msg, ok) {
   el.classList.remove('hidden');
   el.style.color = ok ? 'var(--color-status-good)' : 'var(--color-status-critical)';
 }
+
+// ---- Demo banner (proxy mode only) ----
+async function refreshDemoBanner() {
+  if (!PROXY) return;
+  const banner = document.getElementById('demo-banner');
+  banner.classList.remove('hidden');
+  try {
+    const status = await geminiApi.checkDemoStatus(DEMO_PROXY_URL);
+    document.getElementById('demo-banner-text').textContent =
+      `Live demo — ${status.ipRemaining} of ${status.ipLimit} analyses left for you today (${status.globalRemaining} of ${status.globalLimit} shared today)`;
+  } catch {
+    document.getElementById('demo-banner-text').textContent = 'Live demo — shared quota';
+  }
+}
+
+document.getElementById('link-exit-demo').addEventListener('click', (e) => {
+  e.preventDefault();
+  const url = new URL(location.href);
+  url.searchParams.delete('demo');
+  location.href = url.toString();
+});
 
 // ---- Setup screen ----
 const inputApiKey = document.getElementById('input-api-key');
@@ -89,6 +119,7 @@ document.getElementById('btn-save-key').addEventListener('click', () => {
   if (!MOCK) {
     localStorage.setItem(LS_KEY, state.apiKey);
     localStorage.setItem(LS_MODEL, state.engineModel);
+    geminiApi.configureTransport({ mode: 'byok', apiKey: state.apiKey });
   }
   showScreen('describe');
 });
@@ -97,6 +128,14 @@ document.getElementById('link-mock-mode').addEventListener('click', (e) => {
   e.preventDefault();
   const url = new URL(location.href);
   url.searchParams.set('mock', '1');
+  url.searchParams.delete('demo');
+  location.href = url.toString();
+});
+
+document.getElementById('btn-try-live-demo').addEventListener('click', () => {
+  const url = new URL(location.href);
+  url.searchParams.set('demo', '1');
+  url.searchParams.delete('mock');
   location.href = url.toString();
 });
 
@@ -114,6 +153,7 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
   state.engineModel = document.getElementById('modal-select-engine').value;
   localStorage.setItem(LS_KEY, state.apiKey);
   localStorage.setItem(LS_MODEL, state.engineModel);
+  geminiApi.configureTransport({ mode: 'byok', apiKey: state.apiKey });
   modal.classList.add('hidden');
 });
 document.getElementById('btn-clear-key').addEventListener('click', () => {
@@ -139,7 +179,7 @@ document.getElementById('btn-generate-questions').addEventListener('click', asyn
 
   showLoading('Generating tailored questions…', 'Gemini is reading your workflow description.');
   try {
-    const result = await api.generateQuestions(state.apiKey, state.engineModel, {
+    const result = await api.generateQuestions(state.engineModel, {
       workflowName: name,
       workflowDescription: desc,
     });
@@ -148,7 +188,7 @@ document.getElementById('btn-generate-questions').addEventListener('click', asyn
     showScreen('questionnaire');
   } catch (e) {
     alert(friendlyError(e));
-    showScreen('describe');
+    showScreen(PROXY ? 'setup' : 'describe');
   }
 });
 
@@ -165,7 +205,7 @@ document.getElementById('btn-submit-questionnaire').addEventListener('click', as
 async function runAnalysis() {
   showLoading('Looking up current token pricing…', 'Searching the web for the latest rates for your selected model.');
   try {
-    const pricing = await api.fetchPricing(state.apiKey, state.engineModel, {
+    const pricing = await api.fetchPricing(state.engineModel, {
       modelProvider: state.answers.modelProvider,
       modelName: state.answers.modelName,
     });
@@ -173,7 +213,7 @@ async function runAnalysis() {
     state.costSummary = computeCosts(state.answers, pricing);
 
     showLoading('Estimating benefits & recommendation…', 'Gemini is analyzing likely impact and best practices.');
-    const benefits = await api.analyzeBenefits(state.apiKey, state.engineModel, {
+    const benefits = await api.analyzeBenefits(state.engineModel, {
       workflowName: state.workflowName,
       workflowDescription: state.workflowDescription,
       answers: state.answers,
@@ -185,6 +225,7 @@ async function runAnalysis() {
 
     renderCurrentResults();
     showScreen('results');
+    refreshDemoBanner();
   } catch (e) {
     alert(friendlyError(e));
     showScreen('questionnaire');
@@ -222,4 +263,14 @@ document.addEventListener('app:pricing-updated', (e) => {
 });
 
 // ---- Initial screen ----
-showScreen(state.apiKey ? 'describe' : 'setup');
+if (PROXY) {
+  geminiApi.configureTransport({ mode: 'proxy', proxyUrl: DEMO_PROXY_URL });
+  state.engineModel = 'gemini-2.5-flash';
+  refreshDemoBanner();
+  showScreen('describe');
+} else {
+  if (!MOCK && state.apiKey) {
+    geminiApi.configureTransport({ mode: 'byok', apiKey: state.apiKey });
+  }
+  showScreen(!MOCK && state.apiKey ? 'describe' : 'setup');
+}
