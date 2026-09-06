@@ -1,5 +1,13 @@
-// Thin wrapper around the Gemini API (generateContent), called directly from the
-// browser. generativelanguage.googleapis.com supports CORS so no backend is needed.
+// Thin wrapper around the Gemini API (generateContent). Supports two transports,
+// configured via configureTransport():
+//   - 'byok'  — called directly from the browser with the user's own key
+//               (generativelanguage.googleapis.com supports CORS, no backend needed)
+//   - 'proxy' — routed through the demo Cloudflare Worker proxy (see ../worker/),
+//               which injects a server-side key the browser never sees
+//
+// Both transports share every prompt/schema below — the request bodies built by
+// generateQuestions/fetchPricing/analyzeBenefits are byte-identical either way;
+// only the destination URL and whether a key is appended differ.
 //
 // IMPORTANT constraint: the `google_search` grounding tool and structured JSON
 // output (`responseSchema`) cannot be used in the same call. Pricing lookup
@@ -8,17 +16,31 @@
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+let transport = { mode: 'byok', apiKey: '', proxyUrl: '' };
+
+/** Configure how callGemini reaches the API. Call before any of the exported functions. */
+export function configureTransport(config) {
+  transport = { ...transport, ...config };
+}
+
 export class GeminiError extends Error {
   constructor(message, kind) {
     super(message);
-    this.kind = kind; // 'invalid_key' | 'quota' | 'network' | 'parse' | 'unknown'
+    this.kind = kind; // 'invalid_key' | 'quota' | 'network' | 'parse' | 'unknown' | 'demo_*'
   }
 }
 
-async function callGemini(apiKey, model, body) {
+function endpointFor(model) {
+  if (transport.mode === 'proxy') {
+    return `${transport.proxyUrl.replace(/\/$/, '')}/v1beta/models/${model}:generateContent`;
+  }
+  return `${API_BASE}/${model}:generateContent?key=${encodeURIComponent(transport.apiKey)}`;
+}
+
+async function callGemini(model, body) {
   let res;
   try {
-    res = await fetch(`${API_BASE}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    res = await fetch(endpointFor(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -29,11 +51,16 @@ async function callGemini(apiKey, model, body) {
 
   if (!res.ok) {
     let detail = '';
+    let kind;
     try {
       const errJson = await res.json();
       detail = errJson?.error?.message || '';
+      kind = errJson?.error?.kind; // set by the demo proxy for quota/origin/model errors
     } catch {
       /* ignore */
+    }
+    if (kind) {
+      throw new GeminiError(detail || `Demo proxy error (${res.status}).`, kind);
     }
     if (res.status === 400 || res.status === 403) {
       throw new GeminiError(`Invalid API key or request. ${detail}`, 'invalid_key');
@@ -67,7 +94,7 @@ function extractJson(text) {
   }
 }
 
-/** Cheap call to validate a key works, without spending a generation. */
+/** Cheap call to validate a BYOK key works, without spending a generation. */
 export async function testApiKey(apiKey) {
   let res;
   try {
@@ -82,6 +109,20 @@ export async function testApiKey(apiKey) {
     throw new GeminiError(`Gemini API error (${res.status}).`, 'unknown');
   }
   return true;
+}
+
+/** Demo-mode only: how much of the shared quota is left, without spending a call. */
+export async function checkDemoStatus(proxyUrl) {
+  let res;
+  try {
+    res = await fetch(`${proxyUrl.replace(/\/$/, '')}/status`);
+  } catch {
+    throw new GeminiError('Could not reach the demo proxy. Check your internet connection.', 'network');
+  }
+  if (!res.ok) {
+    throw new GeminiError(`Demo proxy error (${res.status}).`, 'unknown');
+  }
+  return res.json();
 }
 
 const QUESTIONS_SCHEMA = {
@@ -108,7 +149,7 @@ const QUESTIONS_SCHEMA = {
 };
 
 /** Call A — generate a short, tailored questionnaire for this workflow. */
-export async function generateQuestions(apiKey, model, { workflowName, workflowDescription }) {
+export async function generateQuestions(model, { workflowName, workflowDescription }) {
   const prompt = `You are helping size the token economics of an AI/LLM workflow.
 
 Workflow name: ${workflowName}
@@ -124,7 +165,7 @@ percentage, caching potential, seasonality, complexity tiers. Keep questions con
 answerable by a non-technical stakeholder in seconds. Do not repeat the standard fields
 above. If nothing meaningful to add, return an empty array.`;
 
-  const json = await callGemini(apiKey, model, {
+  const json = await callGemini(model, {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: 'application/json',
@@ -135,7 +176,7 @@ above. If nothing meaningful to add, return an empty array.`;
 }
 
 /** Call B — grounded web search for current token pricing of the chosen model. */
-export async function fetchPricing(apiKey, model, { modelProvider, modelName }) {
+export async function fetchPricing(model, { modelProvider, modelName }) {
   const prompt = `Search the web for the CURRENT official token pricing (per 1 million tokens,
 in USD) for this LLM: provider "${modelProvider}", model "${modelName}".
 
@@ -156,7 +197,7 @@ Respond with ONLY a fenced json code block containing exactly this shape, no oth
 }
 \`\`\``;
 
-  const json = await callGemini(apiKey, model, {
+  const json = await callGemini(model, {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     tools: [{ google_search: {} }],
   });
@@ -198,7 +239,7 @@ const BENEFITS_SCHEMA = {
 };
 
 /** Call C — estimate benefits and produce a go/no-go recommendation. */
-export async function analyzeBenefits(apiKey, model, { workflowName, workflowDescription, answers, costSummary, pricing }) {
+export async function analyzeBenefits(model, { workflowName, workflowDescription, answers, costSummary, pricing }) {
   const prompt = `You are a pragmatic AI ROI analyst. Estimate the monthly BENEFIT of the
 workflow below and give a go/no-go recommendation. Be conservative and show your assumptions
 transparently — cite realistic industry benchmarks where relevant, but do not invent false
@@ -223,7 +264,7 @@ NO-GO if cost exceeds or roughly equals benefit, or CONDITIONAL if it's promisin
 on unverified assumptions or piloting. Include best practices and risks specific to this kind
 of workflow.`;
 
-  const json = await callGemini(apiKey, model, {
+  const json = await callGemini(model, {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: 'application/json',

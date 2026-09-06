@@ -1,0 +1,16 @@
+name = "tokeneconomics-demo"
+main = "src/index.js"
+compatibility_date = "2026-09-06"
+
+# Non-secret config — safe to commit. The real Gemini key is set separately via
+# `wrangler secret put GEMINI_API_KEY` and stored encrypted by Cloudflare; it never
+# appears in this file or anywhere else in the repo.
+[vars]
+ALLOWED_ORIGINS = "https://nitinjog.github.io,http://localhost:8123"
+ALLOWED_MODELS = "gemini-2.5-flash,gemini-2.0-flash"
+IP_DAILY_LIMIT = "5"
+GLOBAL_DAILY_LIMIT = "50"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "0d2395cdd6a946109356b1316d2317cc"

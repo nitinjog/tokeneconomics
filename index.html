@@ -49,6 +49,13 @@
   </div>
 </header>
 
+<div id="demo-banner" class="hidden bg-brand-blue/10 border-b border-hairline">
+  <div class="max-w-5xl mx-auto px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+    <span id="demo-banner-text">Live demo — shared quota</span>
+    <a href="#" id="link-exit-demo" class="text-brand-blue hover:underline whitespace-nowrap">Use your own free key for unlimited use →</a>
+  </div>
+</div>
+
 <main class="max-w-5xl mx-auto px-6 py-10">
 
   <!-- SCREEN: SETUP -->
@@ -88,9 +95,13 @@
         </div>
       </div>
 
-      <p class="text-xs text-ink-muted mt-4 text-center">
-        <a href="#" id="link-mock-mode" class="hover:underline">Just exploring? Try demo mode with sample data →</a>
-      </p>
+      <div class="mt-6 pt-5 border-t border-hairline text-center space-y-3">
+        <p class="text-xs text-ink-muted">Just exploring? No key needed for either option below.</p>
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+          <button id="btn-try-live-demo" class="btn-secondary">🚀 Try live demo (real AI, shared quota)</button>
+          <a href="#" id="link-mock-mode" class="btn-secondary inline-flex items-center justify-center">Explore with sample data</a>
+        </div>
+      </div>
     </div>
   </section>
 

@@ -10,7 +10,7 @@ export async function testApiKey() {
   return true;
 }
 
-export async function generateQuestions(_apiKey, _model, { workflowDescription }) {
+export async function generateQuestions(_model, { workflowDescription }) {
   await wait(DELAY);
   return {
     dynamicQuestions: [
@@ -40,7 +40,7 @@ export async function generateQuestions(_apiKey, _model, { workflowDescription }
   };
 }
 
-export async function fetchPricing(_apiKey, _model, { modelProvider, modelName }) {
+export async function fetchPricing(_model, { modelProvider, modelName }) {
   await wait(DELAY + 400);
   return {
     provider: modelProvider || 'Google',
@@ -57,7 +57,7 @@ export async function fetchPricing(_apiKey, _model, { modelProvider, modelName }
   };
 }
 
-export async function analyzeBenefits(_apiKey, _model, { costSummary }) {
+export async function analyzeBenefits(_model, { costSummary }) {
   await wait(DELAY + 300);
   const monthlyBenefit = Math.max(costSummary.monthlyCost * 2.4, 250);
   return {
