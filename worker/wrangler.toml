@@ -11,7 +11,6 @@ ALLOWED_MODELS = "gemini-2.5-flash,gemini-2.0-flash"
 IP_DAILY_LIMIT = "5"
 GLOBAL_DAILY_LIMIT = "50"
 
-# Filled in after running: wrangler kv namespace create RATE_LIMIT_KV
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "0d2395cdd6a946109356b1316d2317cc"

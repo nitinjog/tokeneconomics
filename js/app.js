@@ -6,7 +6,7 @@ import { renderResults } from './results.js';
 
 // Filled in after `wrangler deploy` — see worker/README.md. Not a secret: this is a
 // public endpoint address, safe to hardcode (the real Gemini key never leaves the Worker).
-const DEMO_PROXY_URL = 'https://tokeneconomics-demo.WORKERS_SUBDOMAIN.workers.dev';
+const DEMO_PROXY_URL = 'https://tokeneconomics-demo.nitin-nandrajog.workers.dev';
 
 const params = new URLSearchParams(location.search);
 const MOCK = params.get('mock') === '1';
